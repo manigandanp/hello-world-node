@@ -109,9 +109,10 @@ jobs:
             echo "Pulling ${IMAGE}..."
             for i in 1 2 3 4 5; do
               docker pull "${IMAGE}" && break
-              echo "Retry $i: image not yet available, waiting 15s..."
+              echo "Retry \$i: image not yet available, waiting 15s..."
               sleep 15
             done
+            docker tag "${IMAGE}" "${REGISTRY}/${IMAGE_NAME}:dev-latest" 2>/dev/null || true
             echo "Stopping old container..."
             docker stop hello-world-dev 2>/dev/null || true
             docker rm hello-world-dev 2>/dev/null || true
@@ -122,6 +123,9 @@ jobs:
               -p 3000:3000 \
               -e NODE_ENV=development \
               "${IMAGE}"
+            echo "Waiting for health check..."
+            sleep 5
+            curl -sf http://localhost:3000/health || (echo "Health check failed!" && exit 1)
             echo "Cleaning up old images..."
             docker image prune -f --filter "until=24h" 2>/dev/null || true
             echo "DEV deployed successfully!"
@@ -181,19 +185,19 @@ jobs:
 
       - name: Deploy via Tailscale SSH
         env:
-          SHA: ${{ github.sha }}
           REGISTRY: ${{ env.REGISTRY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          SHORT_SHA=$(echo "$SHA" | cut -c1-7)
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:${SHORT_SHA}"
+          # Use 'main' tag for prod deploy — it's pushed first and available immediately.
+          # SHA tags can have GHCR propagation delays of 1-2 minutes.
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:main"
           
           ssh -o StrictHostKeyChecking=no ubuntu@oracle-1.tailf7c768.ts.net << DEPLOY
             set -e
             echo "Pulling ${IMAGE}..."
             for i in 1 2 3 4 5; do
               docker pull "${IMAGE}" && break
-              echo "Retry $i: image not yet available, waiting 15s..."
+              echo "Retry \$i: image not yet available, waiting 15s..."
               sleep 15
             done
             echo "Stopping old container..."
