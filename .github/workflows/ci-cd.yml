@@ -104,7 +104,6 @@ jobs:
           SHORT_SHA=$(echo "$SHA" | cut -c1-7)
           IMAGE="${REGISTRY}/${IMAGE_NAME}:${SHORT_SHA}"
           
-          # Pull the image on the dev server and deploy
           ssh -o StrictHostKeyChecking=no ubuntu@oracle-2.tailf7c768.ts.net << DEPLOY
             set -e
             echo "Pulling ${IMAGE}..."
@@ -119,13 +118,50 @@ jobs:
               -p 3000:3000 \
               -e NODE_ENV=development \
               "${IMAGE}"
+            echo "Cleaning up old images..."
+            docker image prune -f --filter "until=24h" 2>/dev/null || true
             echo "DEV deployed successfully!"
           DEPLOY
+
+  # ─── Cleanup Old GHCR Images ──────────────────────────
+  cleanup-ghcr:
+    name: Cleanup Old GHCR Images
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all package versions
+          VERSIONS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions?per_page=100")
+          
+          # Delete untagged versions (stale builds), keep tagged ones
+          echo "$VERSIONS" | python3 -c "
+          import sys, json
+          versions = json.load(sys.stdin)
+          for v in versions:
+              tags = v.get('metadata', {}).get('container', {}).get('tags', [])
+              if not tags:
+                  print(f'DELETE:{v[\"id\"]}')
+          " | while IFS= read -r line; do
+              if [[ "$line" == DELETE:* ]]; then
+                  VID="${line#DELETE:}"
+                  echo "Deleting untagged version $VID..."
+                  curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                    "https://api.github.com/users/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions/${VID}" || true
+              fi
+          done
+          echo "GHCR cleanup complete"
 
   # ─── Deploy to PRD (on Main Merge) ──────────────────
   deploy-prd:
     name: Deploy to Production
-    needs: build
+    needs: [build, cleanup-ghcr]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -148,7 +184,6 @@ jobs:
           SHORT_SHA=$(echo "$SHA" | cut -c1-7)
           IMAGE="${REGISTRY}/${IMAGE_NAME}:${SHORT_SHA}"
           
-          # Pull the image on the prd server and deploy
           ssh -o StrictHostKeyChecking=no ubuntu@oracle-1.tailf7c768.ts.net << DEPLOY
             set -e
             echo "Pulling ${IMAGE}..."
@@ -166,5 +201,7 @@ jobs:
             echo "Waiting for health check..."
             sleep 5
             curl -sf http://localhost:3000/health || (echo "Health check failed!" && exit 1)
+            echo "Cleaning up old images..."
+            docker image prune -f --filter "until=24h" 2>/dev/null || true
             echo "PROD deployed and healthy!"
           DEPLOY
