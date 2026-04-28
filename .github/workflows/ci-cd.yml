@@ -107,7 +107,11 @@ jobs:
           ssh -o StrictHostKeyChecking=no ubuntu@oracle-2.tailf7c768.ts.net << DEPLOY
             set -e
             echo "Pulling ${IMAGE}..."
-            docker pull "${IMAGE}"
+            for i in 1 2 3 4 5; do
+              docker pull "${IMAGE}" && break
+              echo "Retry $i: image not yet available, waiting 15s..."
+              sleep 15
+            done
             echo "Stopping old container..."
             docker stop hello-world-dev 2>/dev/null || true
             docker rm hello-world-dev 2>/dev/null || true
@@ -187,7 +191,11 @@ jobs:
           ssh -o StrictHostKeyChecking=no ubuntu@oracle-1.tailf7c768.ts.net << DEPLOY
             set -e
             echo "Pulling ${IMAGE}..."
-            docker pull "${IMAGE}"
+            for i in 1 2 3 4 5; do
+              docker pull "${IMAGE}" && break
+              echo "Retry $i: image not yet available, waiting 15s..."
+              sleep 15
+            done
             echo "Stopping old container..."
             docker stop hello-world-prd 2>/dev/null || true
             docker rm hello-world-prd 2>/dev/null || true
