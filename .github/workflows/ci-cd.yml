@@ -42,7 +42,7 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
+      image_tag: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,27 +81,25 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-      url: http://${{ secrets.DEV_HOST }}:3000
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEV_HOST }}
-          username: ${{ secrets.DEV_USER || 'ubuntu' }}
+          username: ${{ secrets.DEV_USER }}
           key: ${{ secrets.DEV_SSH_KEY }}
           script: |
-            echo "🚀 Deploying DEV environment..."
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }} || \
+            echo "Deploying DEV environment..."
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7)
-            docker stop hello-world-dev || true
-            docker rm hello-world-dev || true
+            docker stop hello-world-dev 2>/dev/null || true
+            docker rm hello-world-dev 2>/dev/null || true
             docker run -d \
               --name hello-world-dev \
               --restart unless-stopped \
               -p 3000:3000 \
               -e NODE_ENV=development \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7)
-            echo "✅ DEV deployed at http://$(hostname):3000"
+            echo "DEV deployed"
 
   # ─── Deploy to PRD (on Main Merge) ──────────────────
   deploy-prd:
@@ -111,26 +109,24 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: http://${{ secrets.PRD_HOST }}:3000
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PRD_HOST }}
-          username: ${{ secrets.PRD_USER || 'ubuntu' }}
+          username: ${{ secrets.PRD_USER }}
           key: ${{ secrets.PRD_SSH_KEY }}
           script: |
-            echo "🚀 Deploying PROD environment..."
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            docker stop hello-world-prd || true
-            docker rm hello-world-prd || true
+            echo "Deploying PROD environment..."
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7)
+            docker stop hello-world-prd 2>/dev/null || true
+            docker rm hello-world-prd 2>/dev/null || true
             docker run -d \
               --name hello-world-prd \
               --restart unless-stopped \
               -p 3000:3000 \
               -e NODE_ENV=production \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            echo "✅ PROD deployed at http://$(hostname):3000"
+              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7)
             sleep 3
-            curl -sf http://localhost:3000/health || (echo "❌ Health check failed!" && exit 1)
-            echo "✅ Health check passed!"
+            curl -sf http://localhost:3000/health || (echo "Health check failed!" && exit 1)
+            echo "PROD deployed and healthy"
