@@ -161,7 +161,7 @@ jobs:
   # ─── Deploy to PRD (on Main Merge) ──────────────────
   deploy-prd:
     name: Deploy to Production
-    needs: [build, cleanup-ghcr]
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
